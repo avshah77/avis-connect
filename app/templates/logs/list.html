@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active = "logs" %}
+
+{% block title %}Push Log — AVIS Connect{% endblock %}
+{% block heading %}Push Log{% endblock %}
+
+{% block content %}
+<div class="card" style="padding:12px 16px">
+  <form method="get" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap">
+    <div class="form-group" style="margin:0; flex:1; min-width:120px">
+      <label>Project</label>
+      <select name="project">
+        <option value="">All</option>
+        {% for p in projects %}
+        <option value="{{ p.slug }}" {% if filter_project == p.slug %}selected{% endif %}>{{ p.slug }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0; width:130px">
+      <label>Connector</label>
+      <input type="text" name="connector" value="{{ filter_connector }}" placeholder="netsuite">
+    </div>
+    <div class="form-group" style="margin:0; width:120px">
+      <label>Status</label>
+      <select name="status">
+        <option value="">All</option>
+        {% for s in ['success','error','pending','retrying'] %}
+        <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a href="/logs" class="btn btn-ghost">Clear</a>
+  </form>
+</div>
+
+<div class="card">
+  {% if logs %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Project</th><th>Connector</th><th>Operation</th>
+        <th>Status</th><th>HTTP</th><th>Duration</th><th>Error</th><th>Created</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td><a href="/logs/{{ log.id }}">#{{ log.id }}</a></td>
+        <td>{{ log.project_slug }}</td>
+        <td>{{ log.connector_type }}</td>
+        <td>{{ log.operation }}</td>
+        <td><span class="badge badge-{{ log.status }}">{{ log.status }}</span></td>
+        <td class="text-muted">{{ log.http_status or "—" }}</td>
+        <td>{% if log.duration_ms %}{{ "%.0f"|format(log.duration_ms) }}ms{% else %}—{% endif %}</td>
+        <td class="text-muted" style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
+          {{ log.error_msg or "" }}
+        </td>
+        <td class="text-muted">{{ log.created_at.strftime("%d-%b-%Y %H:%M") if log.created_at else "—" }}</td>
+        <td>
+          {% if log.status == 'error' %}
+          <button class="btn btn-ghost btn-sm" onclick="retryLog({{ log.id }})">Retry</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted" style="padding:16px 0">No logs matching your filter.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function retryLog(id) {
+  if (!confirm(`Retry log #${id}?`)) return;
+  try {
+    const r = await apiCall('POST', `/api/retry/${id}`);
+    toast(r.success ? `Retry OK — new log #${r.log_id}` : `Retry failed: ${r.error}`, r.success);
+    setTimeout(() => location.reload(), 1000);
+  } catch (e) { toast(e.message, false); }
+}
+</script>
+{% endblock %}

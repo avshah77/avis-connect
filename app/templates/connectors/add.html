@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% set active = "connector-add" %}
+
+{% block title %}Add Connector — AVIS Connect{% endblock %}
+{% block heading %}Add Connector{% endblock %}
+{% block header_actions %}
+  <a href="/connectors" class="btn btn-ghost btn-sm">← Connectors</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:600px">
+  <div class="card">
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Project</label>
+        <select id="f-project">
+          <option value="">— select project —</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }} ({{ p.slug }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Connector Type</label>
+        <input type="text" id="f-type" placeholder="e.g. darwinbox, timesheet"
+               list="type-list" oninput="onTypeInput()" autocomplete="off">
+        <datalist id="type-list">
+          {% for name in plugin_names %}
+          <option value="{{ name }}">
+          {% endfor %}
+        </datalist>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Connector Name <span class="text-muted">(label — e.g. "Tessolve Darwinbox Prod")</span></label>
+      <input type="text" id="f-name" placeholder="Friendly name for this connector instance">
+    </div>
+
+    <!-- Credentials key-value table -->
+    <div style="border-top:1px solid var(--border); margin:16px 0 14px"></div>
+    <div class="flex-between" style="margin-bottom:10px">
+      <div class="card-title">Credentials</div>
+      <button class="btn btn-ghost btn-sm" onclick="addRow()">+ Add Field</button>
+    </div>
+
+    <div id="kv-list" style="display:flex; flex-direction:column; gap:8px"></div>
+
+    <div id="type-hint" style="display:none; margin-top:10px; font-size:11px; color:var(--muted)"></div>
+
+    <!-- Actions -->
+    <div style="border-top:1px solid var(--border); margin:20px 0 16px"></div>
+    <div class="flex-between">
+      <button class="btn btn-ghost" id="btn-test" onclick="testConn()" disabled>
+        Test Connection
+      </button>
+      <div style="display:flex; gap:8px">
+        <a href="/connectors" class="btn btn-ghost">Cancel</a>
+        <button class="btn btn-primary" style="min-width:130px" onclick="save()">
+          Save Connector
+        </button>
+      </div>
+    </div>
+    <div id="test-result" style="display:none; margin-top:10px; padding:8px 10px;
+         border-radius:4px; font-size:11px"></div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const KNOWN_KEYS  = {{ cred_keys_json|safe }};
+const KNOWN_TYPES = {{ plugin_names_json|safe }};
+
+const SECRET_WORDS = ['password','secret','token','key','pass'];
+function isSecret(k) { return SECRET_WORDS.some(w => k.toLowerCase().includes(w)); }
+
+function addRow(key = '', val = '', saved = false) {
+  const id  = 'kv-' + Date.now() + Math.random().toString(36).slice(2,6);
+  const div = document.createElement('div');
+  div.id    = id;
+  div.style.cssText = 'display:grid; grid-template-columns:160px 1fr 30px; gap:8px; align-items:center';
+  div.innerHTML = `
+    <input type="text"     class="kv-key" value="${key}" placeholder="key name"
+           oninput="onKeyInput(this)" autocomplete="off">
+    <div style="position:relative">
+      <input type="${isSecret(key) ? 'password' : 'text'}" class="kv-val"
+             value="${val}"
+             placeholder="${saved ? '•••••••• (saved — leave blank to keep)' : 'value'}"
+             autocomplete="off" style="padding-right:32px">
+      <button onclick="toggleVis(this)" tabindex="-1"
+              style="position:absolute;right:6px;top:50%;transform:translateY(-50%);
+                     background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px">👁</button>
+    </div>
+    <button onclick="document.getElementById('${id}').remove()"
+            style="background:none;border:none;color:var(--err);cursor:pointer;font-size:16px;padding:0">×</button>
+  `;
+  document.getElementById('kv-list').appendChild(div);
+}
+
+function onKeyInput(input) {
+  const valInput = input.closest('div[id^=kv]').querySelector('.kv-val');
+  valInput.type  = isSecret(input.value) ? 'password' : 'text';
+}
+
+function toggleVis(btn) {
+  const inp = btn.previousElementSibling;
+  inp.type  = inp.type === 'password' ? 'text' : 'password';
+}
+
+function collectCreds() {
+  const creds = {};
+  document.querySelectorAll('#kv-list > div').forEach(row => {
+    const k = row.querySelector('.kv-key').value.trim();
+    const v = row.querySelector('.kv-val').value.trim();
+    if (k) creds[k] = v;
+  });
+  return creds;
+}
+
+function onTypeInput() {
+  const type   = document.getElementById('f-type').value.trim().toLowerCase();
+  const hint   = document.getElementById('type-hint');
+  const testBtn= document.getElementById('btn-test');
+  document.getElementById('kv-list').innerHTML = '';
+
+  if (!type) { hint.style.display = 'none'; testBtn.disabled = true; return; }
+
+  const keys = KNOWN_KEYS[type] || [];
+  if (keys.length) {
+    keys.forEach(k => addRow(k));
+    hint.textContent  = `${keys.length} standard fields pre-loaded for ${type}.`;
+    hint.style.display = 'block';
+  } else {
+    addRow('base_url'); addRow('api_key');
+    hint.innerHTML     = `<span style="color:var(--warn)">Unknown connector type.</span> A new plugin file will be generated on save. You can add any fields you need.`;
+    hint.style.display = 'block';
+  }
+  testBtn.disabled = false;
+}
+
+async function testConn() {
+  const type  = document.getElementById('f-type').value.trim().toLowerCase();
+  const creds = collectCreds();
+  const res   = document.getElementById('test-result');
+
+  if (!type) { toast('Enter a connector type first', false); return; }
+
+  res.style.display = 'block';
+  res.style.background = 'rgba(243,156,18,.1)';
+  res.style.color      = 'var(--warn)';
+  res.textContent      = 'Testing…';
+
+  try {
+    const r = await apiCall('POST', '/admin/connectors/test',
+      { connector_type: type, credentials: creds });
+    if (r.healthy) {
+      res.style.background = 'rgba(46,204,113,.1)';
+      res.style.color      = 'var(--ok)';
+      res.textContent      = '✓ Connection successful';
+    } else {
+      res.style.background = 'rgba(231,76,60,.1)';
+      res.style.color      = 'var(--err)';
+      res.textContent      = '✗ ' + (r.error || 'Connection failed');
+    }
+  } catch (e) {
+    res.style.background = 'rgba(231,76,60,.1)';
+    res.style.color      = 'var(--err)';
+    res.textContent      = '✗ ' + e.message;
+  }
+}
+
+async function save() {
+  const projectId = document.getElementById('f-project').value;
+  const type      = document.getElementById('f-type').value.trim().toLowerCase();
+
+  if (!projectId) { toast('Select a project', false); return; }
+  if (!type)      { toast('Enter a connector type', false); return; }
+
+  const creds = collectCreds();
+
+  // If unknown type, generate plugin file first
+  if (!KNOWN_TYPES.includes(type)) {
+    try {
+      const g = await apiCall('POST', `/admin/connectors/generate-plugin?connector_type=${encodeURIComponent(type)}`);
+      if (g.created) toast(`Plugin file created: ${type}.py`);
+    } catch (e) { /* plugin generation is best-effort */ }
+  }
+
+  try {
+    const r = await apiCall('POST', '/admin/connectors/setup', {
+      project_id:     parseInt(projectId),
+      connector_type: type,
+      base_url:       creds.base_url || null,
+      credentials:    creds,
+      updated_by:     'ui',
+    });
+    toast(`Saved — ${r.credentials_saved} credential${r.credentials_saved !== 1 ? 's' : ''} stored`);
+    setTimeout(() => window.location = '/connectors', 900);
+  } catch (e) { toast(e.message, false); }
+}
+</script>
+{% endblock %}

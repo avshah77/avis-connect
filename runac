@@ -1,0 +1,36 @@
+#!/bin/bash
+# Start AVIS Connect
+set -e
+
+cd /Volumes/PYTHON/ROM_MVP/AVIS_Connect
+
+PYTHON=/Users/avis/pyenv/envai/bin/python3
+ALEMBIC=/Users/avis/pyenv/envai/bin/alembic
+UVICORN=/Users/avis/pyenv/envai/bin/uvicorn
+
+if [ ! -f .env ]; then
+  echo "ERROR: .env not found. Copy .env.example and fill in values."
+  exit 1
+fi
+
+source .env
+
+HOST=${CONNECT_HOST:-0.0.0.0}
+PORT=${CONNECT_PORT:-8001}
+
+# Free the port if already in use
+EXISTING=$(lsof -ti tcp:${PORT} 2>/dev/null || true)
+if [ -n "$EXISTING" ]; then
+  echo "Killing existing process on port ${PORT} (PID: $EXISTING)..."
+  kill -9 $EXISTING
+fi
+
+echo "Running DB migrations..."
+$ALEMBIC upgrade head
+
+echo ""
+echo "Starting AVIS Connect on http://localhost:${PORT}"
+echo "  Admin: http://localhost:${PORT}/"
+echo "  Docs:  http://localhost:${PORT}/docs"
+echo ""
+$UVICORN connect.main:app --host "$HOST" --port "$PORT" --reload

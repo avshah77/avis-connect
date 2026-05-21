@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% set active = "projects" %}
+
+{% block title %}Projects — AVIS Connect{% endblock %}
+{% block heading %}Projects{% endblock %}
+{% block header_actions %}
+  <button class="btn btn-primary btn-sm" onclick="showCreate()">+ New Project</button>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Slug</th><th>Name</th><th>Description</th><th>Active</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td><a href="/projects/{{ p.id }}">{{ p.slug }}</a></td>
+        <td>{{ p.name }}</td>
+        <td class="text-muted">{{ p.description or "—" }}</td>
+        <td>{% if p.active %}<span class="badge badge-success">yes</span>{% else %}<span class="badge badge-error">no</span>{% endif %}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="editProject({{ p.id }}, '{{ p.slug }}', '{{ p.name }}', '{{ p.description or '' }}', {{ p.active|lower }})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProject({{ p.id }}, '{{ p.slug }}')">Delete</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted" style="padding:16px 10px">No projects yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Create / Edit modal -->
+<div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="width:420px; max-width:90vw;">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="card-title" id="modal-title">New Project</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideModal()">✕</button>
+    </div>
+    <input type="hidden" id="edit-id">
+    <div class="form-group">
+      <label>Slug (unique, URL-safe)</label>
+      <input type="text" id="f-slug" placeholder="rms-tessolve">
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="f-name" placeholder="RMS × Tessolve">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <input type="text" id="f-desc" placeholder="Optional">
+    </div>
+    <div class="form-group" style="display:flex; align-items:center; gap:8px">
+      <input type="checkbox" id="f-active" checked style="width:auto">
+      <label for="f-active" style="margin:0">Active</label>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+      <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProject()">Save</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showCreate() {
+  document.getElementById('edit-id').value = '';
+  document.getElementById('modal-title').textContent = 'New Project';
+  document.getElementById('f-slug').value = '';
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-desc').value = '';
+  document.getElementById('f-active').checked = true;
+  document.getElementById('f-slug').disabled = false;
+  document.getElementById('modal').style.display = 'flex';
+}
+function editProject(id, slug, name, desc, active) {
+  document.getElementById('edit-id').value = id;
+  document.getElementById('modal-title').textContent = 'Edit Project';
+  document.getElementById('f-slug').value = slug;
+  document.getElementById('f-slug').disabled = true;
+  document.getElementById('f-name').value = name;
+  document.getElementById('f-desc').value = desc;
+  document.getElementById('f-active').checked = active;
+  document.getElementById('modal').style.display = 'flex';
+}
+function hideModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+async function saveProject() {
+  const id   = document.getElementById('edit-id').value;
+  const body = {
+    slug:        document.getElementById('f-slug').value.trim(),
+    name:        document.getElementById('f-name').value.trim(),
+    description: document.getElementById('f-desc').value.trim() || null,
+    active:      document.getElementById('f-active').checked,
+  };
+  try {
+    if (id) {
+      await apiCall('PATCH', `/admin/projects/${id}`, body);
+      toast('Project updated');
+    } else {
+      await apiCall('POST', '/admin/projects', body);
+      toast('Project created');
+    }
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+async function deleteProject(id, slug) {
+  if (!confirm(`Delete project "${slug}"? This removes all linked connectors, credentials, and operations.`)) return;
+  try {
+    await apiCall('DELETE', `/admin/projects/${id}`);
+    toast('Deleted');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+</script>
+{% endblock %}

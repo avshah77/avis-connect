@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AVIS Connect{% endblock %}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">⚡</span>
+      <span class="brand-name">AVIS Connect</span>
+      <span class="brand-version">v1</span>
+    </div>
+    <ul class="nav-links">
+      <li class="nav-section">Overview</li>
+      <li><a href="/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+      <li><a href="/health" class="{% if active == 'health' %}active{% endif %}">Health</a></li>
+      <li class="nav-section">Configure</li>
+      <li><a href="/projects" class="{% if active == 'projects' %}active{% endif %}">Projects</a></li>
+      <li><a href="/connectors" class="{% if active == 'connectors' %}active{% endif %}">Connectors</a></li>
+      <li><a href="/connectors/add" class="{% if active == 'connector-add' %}active{% endif %}">Add Connector</a></li>
+      <li class="nav-section">Operate</li>
+      <li><a href="/execute" class="{% if active == 'execute' %}active{% endif %}">Execute</a></li>
+      <li><a href="/logs" class="{% if active == 'logs' %}active{% endif %}">Push Log</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <a href="/docs" target="_blank">API Docs ↗</a>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% block header_actions %}{% endblock %}
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Generic fetch wrapper used by all admin actions
+    async function apiCall(method, url, body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(url, opts);
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || data.error || r.statusText);
+      return data;
+    }
+    function toast(msg, ok = true) {
+      const t = document.createElement('div');
+      t.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

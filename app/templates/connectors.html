@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set active = "connectors" %}
+
+{% block title %}Connectors — AVIS Connect{% endblock %}
+{% block heading %}Connectors{% endblock %}
+{% block header_actions %}
+  <span class="text-muted" style="font-size:11px">{{ plugins|length }} plugin{{ 's' if plugins|length != 1 }} registered</span>
+{% endblock %}
+
+{% block content %}
+
+{% for plugin in plugins %}
+<div class="card">
+  <div class="flex-between" style="margin-bottom:12px">
+    <div style="display:flex; align-items:center; gap:10px">
+      <span class="badge badge-success" style="font-size:12px; padding:4px 10px">{{ plugin.name }}</span>
+      <span class="text-muted" style="font-size:11px">{{ plugin.auth }}</span>
+    </div>
+    <div style="display:flex; gap:8px">
+      {% for proj in plugin.projects %}
+      <a href="/projects/{{ proj.id }}" class="btn btn-ghost btn-sm">{{ proj.slug }}</a>
+      {% else %}
+      <span class="text-muted" style="font-size:11px">No projects configured</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p style="font-size:11px; color:var(--muted); margin-bottom:12px">{{ plugin.description }}</p>
+
+  <div class="card-title">Credential Keys Required</div>
+  <div style="display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 14px">
+    {% for key in plugin.credential_keys %}
+    <code style="font-size:10px; background:var(--bg); border:1px solid var(--border); padding:2px 7px; border-radius:3px; color:var(--accent)">{{ key }}</code>
+    {% endfor %}
+  </div>
+
+  <div class="card-title">Operations</div>
+  <table style="margin-top:6px">
+    <thead>
+      <tr><th>Operation Name</th><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      {% for op in plugin.operations %}
+      <tr>
+        <td><code>{{ op.name }}</code></td>
+        <td><span style="color:var(--accent)">{{ op.method }}</span></td>
+        <td class="text-muted">{{ op.endpoint }}</td>
+        <td class="text-muted">{{ op.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if plugin.payload_examples %}
+  <div class="card-title" style="margin-top:14px">Payload Examples</div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-top:8px">
+    {% for ex in plugin.payload_examples %}
+    <div>
+      <div style="font-size:10px; color:var(--muted); margin-bottom:4px">{{ ex.label }}</div>
+      <pre style="font-size:10px">{{ ex.json }}</pre>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}

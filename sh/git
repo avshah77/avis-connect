@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+REPO_NAME="avis-connect"
+GITHUB_USER="$(gh api user --jq '.login')"
+GITHUB_ID="$(gh api user --jq '.id')"
+NOREPLY_EMAIL="${GITHUB_ID}+${GITHUB_USER}@users.noreply.github.com"
+
+# ── First-time setup: init repo and create GitHub remote if not done ──────────
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+  echo "── First-time setup ───────────────────────────────────"
+  git init
+  git config user.email "$NOREPLY_EMAIL"
+  git add -A
+  git commit -m "Initial commit — AVIS Connect standalone"
+  gh repo create "${GITHUB_USER}/${REPO_NAME}" --public --source=. --remote=origin --push
+  echo ""
+  echo "Done. Repo: https://github.com/${GITHUB_USER}/${REPO_NAME}"
+  exit 0
+fi
+
+# ── Regular commit + push ─────────────────────────────────────────────────────
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+if [[ "${1:-}" == "" ]]; then
+  COMMIT_MESSAGE="Update $(date '+%Y-%m-%d %H:%M:%S')"
+else
+  COMMIT_MESSAGE="$*"
+fi
+
+if [[ -z "$(git status --porcelain)" ]]; then
+  echo "No changes to commit."
+  exit 0
+fi
+
+echo "Repository: $SCRIPT_DIR"
+echo "Branch: $BRANCH"
+echo "Commit message: $COMMIT_MESSAGE"
+echo
+echo "Staging changes..."
+git add -A
+
+echo
+echo "Changes to be committed:"
+git status --short
+
+echo
+echo "Creating commit..."
+git commit -m "$COMMIT_MESSAGE"
+COMMIT_HASH="$(git rev-parse --short HEAD)"
+
+echo
+echo "Pushing to origin/$BRANCH..."
+git push -u origin "$BRANCH"
+
+echo
+echo "=========================================="
+echo " Commit: $COMMIT_HASH"
+echo "=========================================="
+echo
+echo "Done."

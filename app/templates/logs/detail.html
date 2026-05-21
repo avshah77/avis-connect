@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active = "logs" %}
+
+{% block title %}Log #{{ log.id }} — AVIS Connect{% endblock %}
+{% block heading %}Execution #{{ log.id }}{% endblock %}
+{% block header_actions %}
+  <div style="display:flex; gap:8px; align-items:center">
+    {% if log.status == 'error' %}
+    <button class="btn btn-ghost btn-sm" onclick="retryLog({{ log.id }})">Retry</button>
+    {% endif %}
+    <a href="/logs" class="btn btn-ghost btn-sm">← Log</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="stats-row" style="grid-template-columns: repeat(5, 1fr)">
+  <div class="stat-card">
+    <div class="stat-value" style="font-size:16px">{{ log.project_slug }}</div>
+    <div class="stat-label">Project</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="font-size:16px">{{ log.connector_type }}</div>
+    <div class="stat-label">Connector</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="font-size:16px">{{ log.operation }}</div>
+    <div class="stat-label">Operation</div>
+  </div>
+  <div class="stat-card {% if log.status == 'success' %}stat-ok{% elif log.status == 'error' %}stat-err{% endif %}">
+    <div class="stat-value" style="font-size:16px">{{ log.status }}</div>
+    <div class="stat-label">Status</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="font-size:16px">{% if log.duration_ms %}{{ "%.0f"|format(log.duration_ms) }}ms{% else %}—{% endif %}</div>
+    <div class="stat-label">Duration</div>
+  </div>
+</div>
+
+{% if log.error_msg %}
+<div class="card" style="border-left: 2px solid var(--err)">
+  <div class="card-title">Error</div>
+  <pre style="color: var(--err)">{{ log.error_msg }}</pre>
+</div>
+{% endif %}
+
+<div class="form-row">
+  <div>
+    <div class="card">
+      <div class="card-title">Payload Sent</div>
+      <pre>{{ payload_fmt }}</pre>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-title">Response Received</div>
+      <pre>{{ response_fmt }}</pre>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Metadata</div>
+  <table>
+    <tbody>
+      <tr><td>Log ID</td><td>{{ log.id }}</td></tr>
+      <tr><td>HTTP Status</td><td>{{ log.http_status or "—" }}</td></tr>
+      <tr><td>Retry Count</td><td>{{ log.retry_count }}</td></tr>
+      {% if log.original_log_id %}<tr><td>Original Log</td><td><a href="/logs/{{ log.original_log_id }}">#{{ log.original_log_id }}</a></td></tr>{% endif %}
+      <tr><td>Created</td><td>{{ log.created_at.strftime("%d-%b-%Y %H:%M:%S") if log.created_at else "—" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function retryLog(id) {
+  if (!confirm(`Retry log #${id}?`)) return;
+  try {
+    const r = await apiCall('POST', `/api/retry/${id}`);
+    toast(r.success ? `Retry OK — new log #${r.log_id}` : `Retry failed: ${r.error}`, r.success);
+    if (r.log_id) setTimeout(() => window.location = `/logs/${r.log_id}`, 1000);
+  } catch (e) { toast(e.message, false); }
+}
+</script>
+{% endblock %}

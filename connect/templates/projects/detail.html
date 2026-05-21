@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% set active = "projects" %}
+
+{% block title %}{{ project.slug }} — AVIS Connect{% endblock %}
+{% block heading %}{{ project.name }}{% endblock %}
+{% block header_actions %}
+  <a href="/projects" class="btn btn-ghost btn-sm">← Projects</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Connector config -->
+<div class="card">
+  <div class="flex-between" style="margin-bottom:10px">
+    <div class="card-title">Connectors</div>
+    <button class="btn btn-primary btn-sm" onclick="showAddConnector()">+ Add Connector</button>
+  </div>
+  <table>
+    <thead><tr><th>Type</th><th>Base URL</th><th>Active</th><th>Credentials</th><th></th></tr></thead>
+    <tbody>
+      {% for c in connectors %}
+      <tr id="conn-row-{{ c.id }}">
+        <td><strong>{{ c.connector_type }}</strong></td>
+        <td class="text-muted">{{ c.base_url or "—" }}</td>
+        <td>{% if c.active %}<span class="badge badge-success">yes</span>{% else %}<span class="badge badge-error">no</span>{% endif %}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="showCreds({{ c.id }}, '{{ c.connector_type }}')">Manage Keys</button>
+        </td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteConnector({{ c.id }})">Remove</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted" style="padding:12px 10px">No connectors configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Operations -->
+<div class="card">
+  <div class="flex-between" style="margin-bottom:10px">
+    <div class="card-title">Operations</div>
+    <button class="btn btn-primary btn-sm" onclick="showAddOp()">+ Add Operation</button>
+  </div>
+  <table>
+    <thead><tr><th>Connector</th><th>Name</th><th>Method</th><th>Endpoint</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+      {% for op in operations %}
+      <tr>
+        <td>{{ op.connector_type }}</td>
+        <td><code>{{ op.operation_name }}</code></td>
+        <td>{{ op.method }}</td>
+        <td class="text-muted" style="font-size:10px">{{ op.endpoint }}</td>
+        <td>{% if op.active %}<span class="badge badge-success">yes</span>{% else %}<span class="badge badge-error">no</span>{% endif %}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteOp({{ op.id }})">Remove</button></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted" style="padding:12px 10px">No operations configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Recent logs -->
+<div class="card">
+  <div class="flex-between" style="margin-bottom:10px">
+    <div class="card-title">Recent Executions</div>
+    <a href="/logs?project={{ project.slug }}" class="btn btn-ghost btn-sm">All Logs</a>
+  </div>
+  {% if recent_logs %}
+  <table>
+    <thead><tr><th>ID</th><th>Op</th><th>Status</th><th>Duration</th><th>Time</th></tr></thead>
+    <tbody>
+      {% for log in recent_logs %}
+      <tr>
+        <td><a href="/logs/{{ log.id }}">#{{ log.id }}</a></td>
+        <td>{{ log.operation }}</td>
+        <td><span class="badge badge-{{ log.status }}">{{ log.status }}</span></td>
+        <td>{% if log.duration_ms %}{{ "%.0f"|format(log.duration_ms) }}ms{% else %}—{% endif %}</td>
+        <td class="text-muted">{{ log.created_at.strftime("%d-%b-%Y %H:%M") if log.created_at else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted" style="padding:8px 0">No executions yet for this project.</p>
+  {% endif %}
+</div>
+
+<!-- Add Connector modal -->
+<div id="modal-conn" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="width:400px; max-width:90vw;">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="card-title">Add Connector</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-conn').style.display='none'">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Connector Type</label>
+      <select id="cc-type">
+        {% for name in plugin_names %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Base URL (optional)</label>
+      <input type="url" id="cc-url" placeholder="https://...">
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-conn').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="addConnector()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Credential manager modal -->
+<div id="modal-creds" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="width:460px; max-width:90vw;">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="card-title" id="creds-title">Credentials</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-creds').style.display='none'">✕</button>
+    </div>
+    <div id="creds-list" style="margin-bottom:12px"></div>
+    <hr style="border-color: var(--border); margin-bottom:12px">
+    <div class="form-group">
+      <label>Key</label>
+      <input type="text" id="cred-key" placeholder="account_id">
+    </div>
+    <div class="form-group">
+      <label>Value (plaintext — encrypted on save)</label>
+      <input type="password" id="cred-val" placeholder="••••••••">
+    </div>
+    <input type="hidden" id="cred-conn-id">
+    <input type="hidden" id="cred-conn-type">
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-creds').style.display='none'">Close</button>
+      <button class="btn btn-primary" onclick="saveCred()">Save Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Operation modal -->
+<div id="modal-op" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="width:480px; max-width:90vw;">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="card-title">Add Operation</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-op').style.display='none'">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Connector</label>
+        <select id="op-conn-id">
+          {% for c in connectors %}<option value="{{ c.id }}" data-type="{{ c.connector_type }}">{{ c.connector_type }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="op-method">
+          <option>POST</option><option>GET</option><option>PATCH</option><option>DELETE</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Operation Name</label>
+      <input type="text" id="op-name" placeholder="create_so">
+    </div>
+    <div class="form-group">
+      <label>Endpoint (relative path or full URL)</label>
+      <input type="text" id="op-endpoint" placeholder="/salesorder">
+    </div>
+    <div class="form-group">
+      <label>Description (optional)</label>
+      <input type="text" id="op-desc" placeholder="">
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-op').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="addOp()">Add</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PROJECT_ID = {{ project.id }};
+
+function showAddConnector() { document.getElementById('modal-conn').style.display = 'flex'; }
+
+async function addConnector() {
+  const body = {
+    project_id:     PROJECT_ID,
+    connector_type: document.getElementById('cc-type').value,
+    base_url:       document.getElementById('cc-url').value.trim() || null,
+    active:         true,
+  };
+  try {
+    await apiCall('POST', '/admin/connectors', body);
+    toast('Connector added');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+
+async function deleteConnector(id) {
+  if (!confirm('Remove this connector? Associated operations will also be deleted.')) return;
+  try {
+    await apiCall('PATCH', `/admin/connectors/${id}`, { active: false });
+    toast('Connector disabled');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+
+async function showCreds(connId, connType) {
+  document.getElementById('cred-conn-id').value   = connId;
+  document.getElementById('cred-conn-type').value  = connType;
+  document.getElementById('creds-title').textContent = `Credentials — ${connType}`;
+  document.getElementById('modal-creds').style.display = 'flex';
+  const keys = await apiCall('GET', `/admin/credentials/keys?project_id=${PROJECT_ID}&connector_type=${connType}`);
+  const list = document.getElementById('creds-list');
+  if (!keys.length) { list.innerHTML = '<p class="text-muted">No credentials stored yet.</p>'; return; }
+  list.innerHTML = '<table><thead><tr><th>Key</th><th>Updated</th><th></th></tr></thead><tbody>' +
+    keys.map(k => `<tr>
+      <td><code>${k.key}</code></td>
+      <td class="text-muted">${k.updated_at ? k.updated_at.slice(0,10) : '—'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteCred('${k.key}')">×</button></td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+async function saveCred() {
+  const body = {
+    project_id:     PROJECT_ID,
+    connector_type: document.getElementById('cred-conn-type').value,
+    key:            document.getElementById('cred-key').value.trim(),
+    value:          document.getElementById('cred-val').value,
+    updated_by:     'admin-ui',
+  };
+  if (!body.key || !body.value) { toast('Key and value required', false); return; }
+  try {
+    await apiCall('POST', '/admin/credentials', body);
+    toast(`Saved key: ${body.key}`);
+    document.getElementById('cred-key').value = '';
+    document.getElementById('cred-val').value  = '';
+    await showCreds(document.getElementById('cred-conn-id').value, body.connector_type);
+  } catch (e) { toast(e.message, false); }
+}
+
+async function deleteCred(key) {
+  const ct = document.getElementById('cred-conn-type').value;
+  if (!confirm(`Delete key "${key}"?`)) return;
+  try {
+    await apiCall('DELETE', `/admin/credentials?project_id=${PROJECT_ID}&connector_type=${ct}&key=${key}`);
+    toast('Deleted');
+    await showCreds(document.getElementById('cred-conn-id').value, ct);
+  } catch (e) { toast(e.message, false); }
+}
+
+function showAddOp() { document.getElementById('modal-op').style.display = 'flex'; }
+
+async function addOp() {
+  const connSel = document.getElementById('op-conn-id');
+  const connType = connSel.selectedOptions[0]?.dataset.type || '';
+  const body = {
+    project_id:     PROJECT_ID,
+    connector_id:   parseInt(connSel.value),
+    connector_type: connType,
+    operation_name: document.getElementById('op-name').value.trim(),
+    endpoint:       document.getElementById('op-endpoint').value.trim(),
+    method:         document.getElementById('op-method').value,
+    description:    document.getElementById('op-desc').value.trim() || null,
+    active:         true,
+  };
+  if (!body.operation_name || !body.endpoint) { toast('Name and endpoint required', false); return; }
+  try {
+    await apiCall('POST', '/admin/operations', body);
+    toast('Operation added');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+
+async function deleteOp(id) {
+  if (!confirm('Delete this operation?')) return;
+  try {
+    await apiCall('DELETE', `/admin/operations/${id}`);
+    toast('Deleted');
+    setTimeout(() => location.reload(), 800);
+  } catch (e) { toast(e.message, false); }
+}
+</script>
+{% endblock %}

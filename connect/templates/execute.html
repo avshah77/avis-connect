@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% set active = "execute" %}
+
+{% block title %}Execute — AVIS Connect{% endblock %}
+{% block heading %}Execute{% endblock %}
+{% block header_actions %}
+  <span class="text-muted" style="font-size:11px">Manually fire any operation and inspect the result</span>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start">
+
+  <!-- Left: form -->
+  <div>
+    <div class="card">
+      <div class="card-title">Operation</div>
+
+      <div class="form-group">
+        <label>Project</label>
+        <select id="sel-project" onchange="onProjectChange()">
+          <option value="">— select project —</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}" data-slug="{{ p.slug }}">{{ p.slug }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Connector</label>
+        <select id="sel-connector" disabled onchange="onConnectorChange()">
+          <option value="">— select connector —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Operation</label>
+        <select id="sel-operation" disabled onchange="onOperationChange()">
+          <option value="">— select operation —</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="op-meta" style="display:none">
+        <div style="display:flex; gap:8px; font-size:11px; margin-top:-4px">
+          <span class="text-muted">Method:</span>
+          <span id="op-method" style="color:var(--accent)"></span>
+          <span class="text-muted" style="margin-left:8px">Endpoint:</span>
+          <span id="op-endpoint" style="color:var(--text)"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex-between" style="margin-bottom:8px">
+        <div class="card-title">Payload (JSON)</div>
+        <div style="display:flex; gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="formatPayload()">Format</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearPayload()">Clear</button>
+        </div>
+      </div>
+      <textarea id="payload-editor" rows="12" style="font-family: 'SF Mono', monospace; font-size:11px; resize:vertical" placeholder='{
+  "externalid": "ALLOC-1234",
+  "resource": "EMP-2029"
+}'>{}</textarea>
+    </div>
+
+    <div style="display:flex; gap:8px; justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
+      <button class="btn btn-primary" id="btn-execute" onclick="runExecute()" style="min-width:100px">
+        ▶ Execute
+      </button>
+    </div>
+  </div>
+
+  <!-- Right: result -->
+  <div>
+    <div class="card" id="result-card" style="display:none">
+      <div class="flex-between" style="margin-bottom:10px">
+        <div class="card-title">Result</div>
+        <div id="result-badge"></div>
+      </div>
+
+      <div id="result-meta" style="display:flex; gap:16px; margin-bottom:10px; font-size:11px">
+        <span>Log: <a id="result-log-link" href="#" style="color:var(--accent)"></a></span>
+        <span>Duration: <span id="result-duration" style="color:var(--text)"></span></span>
+      </div>
+
+      <div id="result-error" style="display:none; margin-bottom:10px">
+        <div class="card-title" style="color:var(--err)">Error</div>
+        <pre id="result-error-text" style="color:var(--err)"></pre>
+      </div>
+
+      <div>
+        <div class="card-title">Response</div>
+        <pre id="result-response">{}</pre>
+      </div>
+    </div>
+
+    <div class="card" id="help-card">
+      <div class="card-title">Quick Reference</div>
+      <div style="font-size:11px; line-height:1.8; color:var(--muted)">
+        <p style="margin-bottom:8px">Select a project and operation to see available fields.</p>
+        <p><strong style="color:var(--text)">NetSuite — create_allocation</strong></p>
+        <pre style="font-size:10px; margin:6px 0 10px">{
+  "externalid": "ALLOC-1234",
+  "resource":   "EMP-2029",
+  "project":    "1234",
+  "projecttask":"2466",
+  "startdate":  "01/06/2026",
+  "enddate":    "31/12/2026",
+  "allocationby":"PercentOfTime",
+  "allocation": "40",
+  "allocationtype":"Hard",
+  "allocationcategory":"Billable"
+}</pre>
+        <p><strong style="color:var(--text)">Salesforce — query</strong></p>
+        <pre style="font-size:10px; margin:6px 0 10px">{
+  "q": "SELECT Id, Name, StageName FROM Opportunity LIMIT 5"
+}</pre>
+        <p><strong style="color:var(--text)">Salesforce — update Opportunity</strong></p>
+        <pre style="font-size:10px; margin:6px 0">{
+  "sf_id": "006gK00000HoKHtQAN",
+  "NS_Sales_Order_Mapping__c": "SO-12345"
+}</pre>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const opMap = {};  // connectorType → [{id, name, endpoint, method}, ...]
+const PAYLOAD_TEMPLATES = {{ payload_templates|safe }};
+
+async function onProjectChange() {
+  const sel     = document.getElementById('sel-project');
+  const projId  = sel.value;
+  const connSel = document.getElementById('sel-connector');
+  const opSel   = document.getElementById('sel-operation');
+
+  connSel.innerHTML = '<option value="">— select connector —</option>';
+  opSel.innerHTML   = '<option value="">— select operation —</option>';
+  connSel.disabled  = true;
+  opSel.disabled    = true;
+  hideOpMeta();
+
+  if (!projId) return;
+
+  try {
+    const conns = await adminGet(`/admin/connectors?project_id=${projId}`);
+    conns.filter(c => c.active).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.connector_type;
+      opt.textContent = c.connector_type;
+      connSel.appendChild(opt);
+    });
+    connSel.disabled = conns.length === 0;
+
+    // Pre-load operations for all connectors
+    const ops = await adminGet(`/admin/operations?project_id=${projId}`);
+    ops.forEach(op => {
+      if (!opMap[op.connector_type]) opMap[op.connector_type] = [];
+      opMap[op.connector_type].push(op);
+    });
+  } catch (e) { toast(e.message, false); }
+}
+
+function onConnectorChange() {
+  const ct    = document.getElementById('sel-connector').value;
+  const opSel = document.getElementById('sel-operation');
+  opSel.innerHTML = '<option value="">— select operation —</option>';
+  opSel.disabled  = true;
+  hideOpMeta();
+
+  if (!ct) return;
+  const ops = opMap[ct] || [];
+  ops.filter(o => o.active).forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = JSON.stringify({ name: o.operation_name, endpoint: o.endpoint, method: o.method });
+    opt.textContent = o.operation_name;
+    opSel.appendChild(opt);
+  });
+  opSel.disabled = ops.length === 0;
+}
+
+function onOperationChange() {
+  const raw = document.getElementById('sel-operation').value;
+  if (!raw) { hideOpMeta(); return; }
+  const op = JSON.parse(raw);
+  document.getElementById('op-method').textContent   = op.method;
+  document.getElementById('op-endpoint').textContent = op.endpoint;
+  document.getElementById('op-meta').style.display   = 'block';
+
+  // Always fill payload template when switching operations
+  const editor    = document.getElementById('payload-editor');
+  const connector = document.getElementById('sel-connector').value;
+  const tmplKey   = `${connector}:${op.name}`;
+  const tmpl      = PAYLOAD_TEMPLATES[tmplKey];
+  editor.value = tmpl ? JSON.stringify(tmpl, null, 2) : '{}';
+}
+
+function hideOpMeta() {
+  document.getElementById('op-meta').style.display = 'none';
+}
+
+function formatPayload() {
+  try {
+    const el  = document.getElementById('payload-editor');
+    el.value  = JSON.stringify(JSON.parse(el.value), null, 2);
+  } catch { toast('Invalid JSON', false); }
+}
+
+function clearPayload() {
+  document.getElementById('payload-editor').value = '{}';
+}
+
+function resetForm() {
+  document.getElementById('sel-project').value   = '';
+  document.getElementById('sel-connector').value = '';
+  document.getElementById('sel-connector').disabled = true;
+  document.getElementById('sel-operation').value = '';
+  document.getElementById('sel-operation').disabled = true;
+  clearPayload();
+  hideOpMeta();
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('help-card').style.display   = 'block';
+  Object.keys(opMap).forEach(k => delete opMap[k]);
+}
+
+async function runExecute() {
+  const projSel = document.getElementById('sel-project');
+  const connSel = document.getElementById('sel-connector');
+  const opSel   = document.getElementById('sel-operation');
+
+  const projectSlug = projSel.selectedOptions[0]?.dataset.slug;
+  const connector   = connSel.value;
+  const opRaw       = opSel.value;
+
+  if (!projectSlug || !connector || !opRaw) {
+    toast('Select project, connector and operation first', false);
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById('payload-editor').value || '{}');
+  } catch {
+    toast('Payload is not valid JSON', false);
+    return;
+  }
+
+  const op          = JSON.parse(opRaw);
+  const btn         = document.getElementById('btn-execute');
+  btn.textContent   = '…';
+  btn.disabled      = true;
+
+  try {
+    const r = await fetch('/api/execute', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project:   projectSlug,
+        connector: connector,
+        operation: op.name,
+        payload:   payload,
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    showResult(data);
+  } catch (e) {
+    toast(e.message, false);
+  } finally {
+    btn.textContent = '▶ Execute';
+    btn.disabled    = false;
+  }
+}
+
+function showResult(data) {
+  document.getElementById('help-card').style.display   = 'none';
+  document.getElementById('result-card').style.display = 'block';
+
+  const badge = document.getElementById('result-badge');
+  badge.innerHTML = `<span class="badge badge-${data.success ? 'success' : 'error'}">${data.success ? 'success' : 'error'}</span>`;
+
+  const logLink = document.getElementById('result-log-link');
+  if (data.log_id) {
+    logLink.href        = `/logs/${data.log_id}`;
+    logLink.textContent = `#${data.log_id}`;
+  } else {
+    logLink.textContent = '—';
+  }
+  document.getElementById('result-duration').textContent =
+    data.duration_ms != null ? `${Math.round(data.duration_ms)}ms` : '—';
+
+  const errDiv  = document.getElementById('result-error');
+  const errText = document.getElementById('result-error-text');
+  if (data.error) {
+    errDiv.style.display = 'block';
+    errText.textContent  = data.error;
+  } else {
+    errDiv.style.display = 'none';
+  }
+
+  document.getElementById('result-response').textContent =
+    JSON.stringify(data.response || {}, null, 2);
+}
+
+async function adminGet(url) {
+  const r = await fetch(url, { headers: { Authorization: 'Basic {{ admin_b64 }}' } });
+  if (!r.ok) throw new Error(`Admin API ${r.status}`);
+  return r.json();
+}
+</script>
+{% endblock %}

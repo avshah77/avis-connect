@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% set active = "health" %}
+
+{% block title %}Health — AVIS Connect{% endblock %}
+{% block heading %}Health{% endblock %}
+{% block header_actions %}
+  <button class="btn btn-primary btn-sm" onclick="checkAll()">Check All</button>
+{% endblock %}
+
+{% block content %}
+<div class="stats-row" style="grid-template-columns: repeat(4, 1fr); margin-bottom:20px">
+  <div class="stat-card stat-ok">
+    <div class="stat-value" id="count-healthy">—</div>
+    <div class="stat-label">Healthy</div>
+  </div>
+  <div class="stat-card stat-err">
+    <div class="stat-value" id="count-unhealthy">—</div>
+    <div class="stat-label">Unhealthy</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="count-unchecked">{{ rows|length }}</div>
+    <div class="stat-label">Not Checked</div>
+  </div>
+  <div class="stat-card stat-info">
+    <div class="stat-value">{{ rows|length }}</div>
+    <div class="stat-label">Total Connectors</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title" style="margin-bottom:12px">Connector Status</div>
+  {% if rows %}
+  <table id="health-table">
+    <thead>
+      <tr><th>Project</th><th>Connector</th><th>Status</th><th>Checked</th><th>Detail</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr id="row-{{ row.project_slug }}-{{ row.connector_type }}">
+        <td><a href="/projects/{{ row.project_id }}">{{ row.project_slug }}</a></td>
+        <td>{{ row.connector_type }}</td>
+        <td class="status-cell"><span class="badge badge-pending">unchecked</span></td>
+        <td class="checked-cell text-muted">—</td>
+        <td class="detail-cell text-muted">—</td>
+        <td>
+          <button class="btn btn-ghost btn-sm"
+                  onclick="checkOne('{{ row.connector_type }}', '{{ row.project_slug }}')">
+            Check
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted" style="padding:16px 0">
+    No connectors configured. <a href="/projects">Add a project</a> first.
+  </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">Registered Plugins</div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:6px">
+    {% for name in plugins %}
+    <a href="/connectors" style="text-decoration:none">
+      <span class="badge badge-success">{{ name }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const rows = {{ rows_json|safe }};
+let healthy = 0, unhealthy = 0, checked = 0;
+
+async function checkOne(connectorType, projectSlug) {
+  const rowId  = `row-${projectSlug}-${connectorType}`;
+  const row    = document.getElementById(rowId);
+  const cells  = { status: row.querySelector('.status-cell'),
+                   checked: row.querySelector('.checked-cell'),
+                   detail:  row.querySelector('.detail-cell') };
+
+  cells.status.innerHTML = '<span class="badge badge-pending">checking…</span>';
+  cells.detail.textContent = '';
+
+  try {
+    const r    = await fetch(`/api/health/${connectorType}/${projectSlug}`);
+    const data = await r.json();
+    const ok   = data.healthy;
+    cells.status.innerHTML  = `<span class="badge badge-${ok ? 'success' : 'error'}">${ok ? 'healthy' : 'unhealthy'}</span>`;
+    cells.checked.textContent = new Date().toLocaleTimeString();
+    cells.detail.textContent  = data.error || '';
+    return ok;
+  } catch (e) {
+    cells.status.innerHTML  = '<span class="badge badge-error">error</span>';
+    cells.checked.textContent = new Date().toLocaleTimeString();
+    cells.detail.textContent  = e.message;
+    return false;
+  }
+}
+
+async function checkAll() {
+  document.getElementById('count-healthy').textContent   = '…';
+  document.getElementById('count-unhealthy').textContent = '…';
+  document.getElementById('count-unchecked').textContent = '0';
+
+  let h = 0, u = 0;
+  for (const row of rows) {
+    const ok = await checkOne(row.connector_type, row.project_slug);
+    ok ? h++ : u++;
+    document.getElementById('count-healthy').textContent   = h;
+    document.getElementById('count-unhealthy').textContent = u;
+  }
+}
+</script>
+{% endblock %}

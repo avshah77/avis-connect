@@ -1,0 +1,20 @@
+f#!/usr/bin/env bash
+
+ACTIVATE_SCRIPT="$HOME/pyenv/envai/bin/activate"
+
+runenv_return_or_exit() {
+  return "$1" 2>/dev/null || exit "$1"
+}
+
+if [ ! -f "$ACTIVATE_SCRIPT" ]; then
+  echo "Activation script not found: $ACTIVATE_SCRIPT" >&2
+  runenv_return_or_exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ACTIVATE_SCRIPT"
+
+if [ -n "${BASH_VERSION:-}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  echo "Activated envai in a new shell. Run 'exit' to return."
+  exec /bin/bash -i
+fi
