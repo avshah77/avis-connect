@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: avis-connect
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn connect.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CONNECT_ENCRYPTION_KEY
+        sync: false
+      - key: CONNECT_SECRET
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.12.10"
